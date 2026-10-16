@@ -1,51 +1,55 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const express = require('express')
+const fs = require('fs')
 const app = express()
+let currentCode = 'Generating... Wait 5 sec and refresh'
+let botStatus = 'Starting...'
 
-let status = 'Waiting for phone number... Set PHONE env var!'
-let codeText = ''
+if(fs.existsSync('auth_info') &&!fs.readdirSync('auth_info').length){
+  // clear empty
+}
 
 app.get('/', (req,res)=>{
-  res.send(`<div style="text-align:center;font-family:Arial;padding:30px"><h1>EMPIRE BOT</h1><h2>${status}</h2><h1 style="font-size:60px;letter-spacing:10px">${codeText}</h1><p>Go WhatsApp > Linked Devices > Link with phone number > Enter this code</p><script>setTimeout(()=>location.reload(),5000)</script></div>`)
+  res.send(`<h1 style="text-align:center;font-family:sans-serif">BOT LINK PAGE<br><br>Status: ${botStatus}<br><br><div style="font-size:50px;background:#25D366;color:white;padding:20px;border-radius:15px;letter-spacing:10px">${currentCode}</div><br>WhatsApp > Linked Devices > Link with phone number > Enter code FAST (15 sec only!)<br><br><button onclick="location.reload()" style="padding:15px 30px;font-size:20px">Get New Code</button><script>setTimeout(()=>location.reload(),15000)</script></h1>`)
 })
-app.listen(process.env.PORT||3000)
+app.listen(process.env.PORT||3000, ()=>console.log('Web up'))
 
-async function startBot(){
-  const { version } = await fetchLatestBaileysVersion()
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info')
-  const sock = makeWASocket({ version, auth: state, browser:["Ubuntu","Chrome","20.0.04"], printQRInTerminal:false })
+async function start(){
+  const {version} = await fetchLatestBaileysVersion()
+  console.log('Using WA version', version)
+  const {state, saveCreds} = await useMultiFileAuthState('auth_info')
+  const sock = makeWASocket({version, auth: state, browser:["Chrome","Chrome","1.0"], printQRInTerminal:false})
   sock.ev.on('creds.update', saveCreds)
 
-  if(!sock.authState.creds.registered){
-    const phone = process.env.PHONE // Set in Railway Variables
-    if(phone){
-      status = 'Generating code for '+phone
-      setTimeout(async()=>{
-        try{
-          const code = await sock.requestPairingCode(phone)
-          codeText = code
-          status = 'ENTER THIS CODE IN WHATSAPP'
-          console.log('Pairing code:', code)
-        }catch(e){ status = 'Error: '+e.message }
-      },3000)
-    } else {
-      status = 'Add PHONE variable in Railway! Example: 6281234567890 (no +)'
+  if(!state.creds.registered){
+    botStatus = 'Not registered - generating code'
+    console.log('Generating pairing code for 6597306693...')
+    await new Promise(r=>setTimeout(r,5000))
+    try{
+      const code = await sock.requestPairingCode("6597306693")
+      currentCode = code
+      botStatus = 'CODE READY - ENTER NOW!'
+      console.log('***** YOUR CODE IS: '+code+' *****')
+    }catch(e){
+      console.log('Pairing error', e)
+      botStatus = 'Error: '+e.message
+      currentCode = 'Retry in 10 sec - Refresh page'
     }
   } else {
-    status = 'BOT READY! Now send hi'
+    botStatus = 'Already linked! Bot ready!'
+    currentCode = 'LINKED ✅'
   }
 
-  sock.ev.on('connection.update', async(u)=>{
-    if(u.connection==='open'){ status='BOT READY - SEND HI NOW!'; codeText=''; }
-    if(u.connection==='close' && u.lastDisconnect?.error?.output?.statusCode!==DisconnectReason.loggedOut) setTimeout(startBot,5000)
+  sock.ev.on('connection.update', (u)=>{
+    console.log('Connection:', u)
+    if(u.connection==='open'){ botStatus='BOT READY - SEND HI NOW'; currentCode='✅ CONNECTED!'; console.log('BOT CONNECTED SUCCESS') }
   })
-  sock.ev.on('messages.upsert', async({messages})=>{
+
+  sock.ev.on('messages.upsert', async ({messages})=>{
     const m=messages[0]; if(!m.message) return
-    const text=(m.message.conversation||m.message.extendedTextMessage?.text||'').toLowerCase()
-    console.log('Msg:', text)
-    if(text==='hi'||text==='!help'){
-      await sock.sendMessage(m.key.remoteJid, {text:'YES I WORK! Now I give you full empire code!'})
-    }
+    const txt = (m.message.conversation||m.message.extendedTextMessage?.text||'').toLowerCase()
+    console.log('MSG:', txt)
+    if(txt==='hi'){ await sock.sendMessage(m.key.remoteJid, {text:'✅ IT WORKS! Your bot is ONLINE! Now type!help'}) }
   })
 }
-startBot()
+start()
