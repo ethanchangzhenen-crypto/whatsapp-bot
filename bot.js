@@ -1,55 +1,48 @@
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('@whiskeysockets/baileys')
 const express = require('express')
-const fs = require('fs')
 const app = express()
-let currentCode = 'Generating... Wait 5 sec and refresh'
-let botStatus = 'Starting...'
+let page = '<h1>Starting... refresh in 10 sec</h1>'
 
-if(fs.existsSync('auth_info') &&!fs.readdirSync('auth_info').length){
-  // clear empty
-}
-
-app.get('/', (req,res)=>{
-  res.send(`<h1 style="text-align:center;font-family:sans-serif">BOT LINK PAGE<br><br>Status: ${botStatus}<br><br><div style="font-size:50px;background:#25D366;color:white;padding:20px;border-radius:15px;letter-spacing:10px">${currentCode}</div><br>WhatsApp > Linked Devices > Link with phone number > Enter code FAST (15 sec only!)<br><br><button onclick="location.reload()" style="padding:15px 30px;font-size:20px">Get New Code</button><script>setTimeout(()=>location.reload(),15000)</script></h1>`)
-})
-app.listen(process.env.PORT||3000, ()=>console.log('Web up'))
+app.get('/', (req,res)=> res.send(page))
+app.listen(process.env.PORT||3000)
 
 async function start(){
   const {version} = await fetchLatestBaileysVersion()
-  console.log('Using WA version', version)
-  const {state, saveCreds} = await useMultiFileAuthState('auth_info')
-  const sock = makeWASocket({version, auth: state, browser:["Chrome","Chrome","1.0"], printQRInTerminal:false})
+  const {state, saveCreds} = await useMultiFileAuthState('./auth_info')
+  const sock = makeWASocket({version, auth: state, browser: ["Ubuntu","Chrome","110"], printQRInTerminal:false})
   sock.ev.on('creds.update', saveCreds)
 
-  if(!state.creds.registered){
-    botStatus = 'Not registered - generating code'
-    console.log('Generating pairing code for 6597306693...')
-    await new Promise(r=>setTimeout(r,5000))
-    try{
-      const code = await sock.requestPairingCode("6597306693")
-      currentCode = code
-      botStatus = 'CODE READY - ENTER NOW!'
-      console.log('***** YOUR CODE IS: '+code+' *****')
-    }catch(e){
-      console.log('Pairing error', e)
-      botStatus = 'Error: '+e.message
-      currentCode = 'Retry in 10 sec - Refresh page'
+  sock.ev.on('connection.update', async (u)=>{
+    console.log(u)
+    if(u.qr){
+      const QRCode = require('qrcode')
+      const qrImg = await QRCode.toDataURL(u.qr)
+      page = `
+      <div style="text-align:center;font-family:Arial;padding:20px">
+        <h1 style="color:#25D366">SCAN THIS QR - DO NOT USE CODE</h1>
+        <img src="${qrImg}" style="width:330px;border:8px solid #25D366;border-radius:20px">
+        <h3>1. Open WhatsApp > Settings > Linked Devices</h3>
+        <h3>2. Click Link a Device > Scan</h3>
+        <h3>3. Scan this QR within 20 sec</h3>
+        <p>Auto refreshes every 20 sec for new QR</p>
+        <script>setTimeout(()=>location.reload(),20000)</script>
+      </div>`
     }
-  } else {
-    botStatus = 'Already linked! Bot ready!'
-    currentCode = 'LINKED ✅'
-  }
-
-  sock.ev.on('connection.update', (u)=>{
-    console.log('Connection:', u)
-    if(u.connection==='open'){ botStatus='BOT READY - SEND HI NOW'; currentCode='✅ CONNECTED!'; console.log('BOT CONNECTED SUCCESS') }
+    if(u.connection==='open'){
+      page = '<h1 style="text-align:center;padding:50px;color:green">✅ LINKED! Send hi to bot now!</h1>'
+      console.log('LINKED SUCCESS')
+    }
+    if(u.connection==='close'){
+      const code = u.lastDisconnect?.error?.output?.statusCode
+      if(code!== DisconnectReason.loggedOut) setTimeout(start, 2000)
+      else { page = '<h1>Logged out - delete auth_info and try again</h1>' }
+    }
   })
 
   sock.ev.on('messages.upsert', async ({messages})=>{
     const m=messages[0]; if(!m.message) return
-    const txt = (m.message.conversation||m.message.extendedTextMessage?.text||'').toLowerCase()
-    console.log('MSG:', txt)
-    if(txt==='hi'){ await sock.sendMessage(m.key.remoteJid, {text:'✅ IT WORKS! Your bot is ONLINE! Now type!help'}) }
+    const t=(m.message.conversation||m.message.extendedTextMessage?.text||'').toLowerCase()
+    if(t==='hi') await sock.sendMessage(m.key.remoteJid, {text:'✅ QR METHOD WORKS! Empire Bot Online! Type!help'})
   })
 }
 start()
