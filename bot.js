@@ -5,27 +5,26 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
+            '--single-process'
         ]
     }
 });
 
 client.on('qr', (qr) => {
-    console.log('QR RECEIVED:');
+    console.log('QR RECEIVED - SCAN THIS:');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('✅ Bot is ready! 24/7 Online!');
+    console.log('✅ Bot is READY! 24/7 Online!');
 });
 
 client.on('message', async (msg) => {
