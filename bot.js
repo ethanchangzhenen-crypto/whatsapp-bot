@@ -14,7 +14,7 @@ async function startBot() {
 
     // USE PAIRING CODE INSTEAD OF QR
     if (!state.creds.registered) {
-        const phoneNumber = "6591234567" // <-- CHANGE THIS TO YOUR NUMBER with country code, no + or space
+        const phoneNumber = "6597306863" // <-- CHANGE THIS TO YOUR NUMBER with country code, no + or space
         console.log('Requesting pairing code for:', phoneNumber)
         setTimeout(async () => {
             let code = await sock.requestPairingCode(phoneNumber)
