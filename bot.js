@@ -9,7 +9,8 @@ app.get('/', (req, res) => {
     res.send(`<h1>Scan this QR with WhatsApp</h1><img src="${latestQR}" style="width:400px"><br><p>Refresh if expired</p><script>setTimeout(()=>location.reload(),20000),20000</script>`)
 })
 
-app.listen(3000, () => console.log('Web server on 3000'))
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => console.log('Web server on', PORT))
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth')
