@@ -1,6 +1,6 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys')
-const Boom = require('@hapi/boom')
 const P = require('pino')
+const qrcode = require('qrcode-terminal')
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth')
@@ -8,26 +8,29 @@ async function startBot() {
     const sock = makeWASocket({
         auth: state,
         logger: P({ level: 'silent' }),
-        browser: Browsers.ubuntu('Chrome'),
-        printQRInTerminal: true
+        browser: Browsers.ubuntu('Chrome')
     })
 
     sock.ev.on('creds.update', saveCreds)
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update
-        console.log('Connection:', connection)
+        const { connection, lastDisconnect, qr } = update
+        
+        if (qr) {
+            console.log('QR CODE BELOW - Scan it!')
+            qrcode.generate(qr, { small: true })
+        }
+
+        if (connection) console.log('Connection:', connection)
         
         if (connection === 'close') {
-            let statusCode = lastDisconnect?.error?.output?.statusCode
-            // if Boom object
-            if (lastDisconnect?.error instanceof Boom) {
-                statusCode = lastDisconnect.error.output.statusCode
-            }
+            const statusCode = lastDisconnect?.error?.output?.statusCode
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut
-            console.log('Disconnected, reconnecting:', shouldReconnect, 'code:', statusCode)
+            console.log('Reconnecting:', shouldReconnect, 'Code:', statusCode)
             if (shouldReconnect) {
                 startBot()
+            } else {
+                console.log('Logged out - delete auth folder')
             }
         } else if (connection === 'open') {
             console.log('BOT READY - Bot is online forever!')
@@ -36,14 +39,10 @@ async function startBot() {
 
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0]
-        if (!msg.message) return
-        if (msg.key.fromMe) return
-        
+        if (!msg.message || msg.key.fromMe) return
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
-        console.log('New message:', text)
-
         if (text.toLowerCase() === 'hi') {
-            await sock.sendMessage(msg.key.remoteJid, { text: 'Hi! Bot is online 24/7' })
+            await sock.sendMessage(msg.key.remoteJid, { text: 'Bot online 24/7 ✅' })
         }
     })
 }
