@@ -7,7 +7,7 @@ let qrData=''
 app.get('/',(req,res)=>{ if(!qrData) return res.send('OK'); res.send(`<img src="${qrData}">`) })
 app.listen(process.env.PORT||3000)
 
-const ADMIN_NUMBERS = ['65'] // <--- PUT YOUR NUMBER HERE LIKE 6591234567
+const ADMIN_NUMBERS = ['6597306863'] // <--- PUT YOUR NUMBER HERE LIKE 6591234567
 const isAdmin = (jid) => ADMIN_NUMBERS.some(n => jid.includes(n))
 
 const balances=new Map()
