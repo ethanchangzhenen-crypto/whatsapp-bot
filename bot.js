@@ -68,6 +68,17 @@ async function start(){
         set(`bot_enabled_${from}`, true)
         return send(`🟢 BOT ON\nBot enabled! Try !menu`)
       }
+            if(cmd==='resetadmin' || cmd==='admin_reset' || cmd==='reset_admins'){
+        // Only main owner can reset - or anyone if no admins
+        let global = get(`global_admins`, [])
+        if(global.length>0 && !global.includes(uid)){
+          return send(`❌ Only main admin can reset admins`)
+        }
+        set(`global_admins`, [])
+        set(`admins_${from}`, [])
+        set(`banned_${from}`, [])
+        return send(`♻️ RESET DONE!\nAll admins cleared\nBanned list cleared\n\nSend !admin to become new main admin`)
+      }
       if(cmd==='admin'){
         if(args[0]==='add'){
           let mention = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || args[1]
