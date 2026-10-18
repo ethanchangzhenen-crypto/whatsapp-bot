@@ -7,7 +7,8 @@ let qrData=''
 app.get('/',(req,res)=>{ if(!qrData) return res.send('OK'); res.send(`<img src="${qrData}">`) })
 app.listen(process.env.PORT||3000)
 
-const ADMIN_NUMBERS = ['7014319182055', '7014319182055@lid', '6597306863'] // added short version for LID fix
+// YOUR ADMIN IDS - ADD MORE HERE
+const ADMIN_NUMBERS = ['7014319182055', '7014319182055@lid', '6597306863']
 const isAdmin = (jid) => {
  if(!jid) return false
  return ADMIN_NUMBERS.some(n => jid.includes(n))
@@ -49,14 +50,18 @@ const t=raw.toLowerCase().trim()
 const a=raw.trim().split(/\s+/)
 let ctx=msg.message.extendedTextMessage?.contextInfo
 let target=ctx?.mentionedJid?.[0] || ctx?.participant || sender
-let admin=isAdmin(sender) || isAdmin(jid) || isAdmin(target)
-
-console.log(`MSG: ${t} | sender: ${sender} | jid: ${jid} | isAdmin: ${admin}`)
+let admin=isAdmin(sender) || isAdmin(jid)
 
 if(t==='!myid'){
 await sock.sendMessage(jid,{text:`Your sender: ${sender}\nJID: ${jid}\nIsAdmin: ${admin}`})
 return
 }
+if(t==='!id' || t==='!getid'){
+let name = ctx?.mentionedJid?.[0] ? 'Tagged person' : ctx?.participant ? 'Replied person' : 'You'
+await sock.sendMessage(jid,{text:`${name} ID: ${target}`})
+return
+}
+
 if(t==='!check') await sock.sendMessage(jid,{text:'✅ Bot Online'})
 else if(t==='!bal') await sock.sendMessage(jid,{text:`💰 $${getBal(sender)} | 🏠 ${getProps(sender).length} props`})
 else if(t==='!menu'){
@@ -89,9 +94,9 @@ setBal(sender,getBal(sender)+500)
 await sock.sendMessage(jid,{text:`🎁 +$500\n💰 $${getBal(sender)}`})
 }
 else if(t.startsWith('!addmoney')){
-if(!admin) { console.log('Blocked addmoney not admin'); return }
+if(!admin) return
 let amt=parseInt(a[1])||parseInt(a[a.length-1])
-if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount\nEx: !addmoney 5000'})
+if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Ex: !addmoney 5000'})
 setBal(target,getBal(target)+amt); await sock.sendMessage(jid,{text:`✅ +$${amt} -> $${getBal(target)}`})
 }
 else if(t.startsWith('!removemoney')){
