@@ -47,7 +47,7 @@ const a=raw.trim().split(/\s+/)
 let target=msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || msg.message.extendedTextMessage?.contextInfo?.participant || sender
 let admin=isAdmin(sender)
 
-if(t==='!check') await sock.sendMessage(jid,{text:'✅ Bot Online - You are admin if 6597306863'})
+if(t==='!check') await sock.sendMessage(jid,{text:'✅ Bot Online'})
 else if(t==='!bal') await sock.sendMessage(jid,{text:`💰 $${getBal(sender)} | 🏠 ${getProps(sender).length} props`})
 else if(t==='!menu'){
 let menu=`🎰 KAI MENU
@@ -63,7 +63,6 @@ let menu=`🎰 KAI MENU
 💰 !collect
 
 Slots: 4x=15x (1%) | 3x=7x (5%) | 2x=2x (30%) | Lose 64%`
-if(admin) menu+=`\n\n👑 ADMIN (YOU):\n!addmoney !removemoney !setmoney !reset !resetall !giveprop !removeprop`
 await sock.sendMessage(jid,{text:menu})
 }
 else if(t==='!daily'){
@@ -80,33 +79,33 @@ setBal(sender,getBal(sender)+500)
 await sock.sendMessage(jid,{text:`🎁 +$500\n💰 $${getBal(sender)}`})
 }
 else if(t.startsWith('!addmoney')){
-if(!admin) return await sock.sendMessage(jid,{text:'Admin only - 6597306863'})
+if(!admin) return
 let amt=parseInt(a[a.length-1]); if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
-setBal(target,getBal(target)+amt); await sock.sendMessage(jid,{text:`👑 +$${amt} -> $${getBal(target)}`})
+setBal(target,getBal(target)+amt); await sock.sendMessage(jid,{text:`✅ +$${amt} -> $${getBal(target)}`})
 }
 else if(t.startsWith('!removemoney')){
-if(!admin) return await sock.sendMessage(jid,{text:'Admin only'})
+if(!admin) return
 let amt=parseInt(a[a.length-1]); if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
-setBal(target,Math.max(0,getBal(target)-amt)); await sock.sendMessage(jid,{text:`👑 -$${amt} -> $${getBal(target)}`})
+setBal(target,Math.max(0,getBal(target)-amt)); await sock.sendMessage(jid,{text:`✅ -$${amt} -> $${getBal(target)}`})
 }
 else if(t.startsWith('!setmoney')){
-if(!admin) return await sock.sendMessage(jid,{text:'Admin only'})
+if(!admin) return
 let amt=parseInt(a[a.length-1]); if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
-setBal(target,amt); await sock.sendMessage(jid,{text:`👑 Set $${amt}`})
+setBal(target,amt); await sock.sendMessage(jid,{text:`✅ Set $${amt}`})
 }
 else if(t.startsWith('!reset')){
-if(!admin) return await sock.sendMessage(jid,{text:'Admin only'})
-if(t==='!resetall'){ balances.clear(); userProps.clear(); lastDaily.clear(); lastCollect.clear(); return await sock.sendMessage(jid,{text:'👑 RESET ALL'}) }
-setBal(target,1000); userProps.set(target,[]); lastDaily.delete(target); lastCollect.delete(target); await sock.sendMessage(jid,{text:`👑 Reset ${target.split('@')[0]} to $1000`})
+if(!admin) return
+if(t==='!resetall'){ balances.clear(); userProps.clear(); lastDaily.clear(); lastCollect.clear(); return await sock.sendMessage(jid,{text:'✅ RESET ALL'}) }
+setBal(target,1000); userProps.set(target,[]); lastDaily.delete(target); lastCollect.delete(target); await sock.sendMessage(jid,{text:`✅ Reset to $1000`})
 }
 else if(t.startsWith('!giveprop')){
-if(!admin) return await sock.sendMessage(jid,{text:'Admin only'})
+if(!admin) return
 let id=parseInt(a[a.length-1]); let prop=PROPERTIES.find(p=>p.id===id); if(!prop) return await sock.sendMessage(jid,{text:'❌ Invalid id'})
-let list=getProps(target); list.push(id); userProps.set(target,list); await sock.sendMessage(jid,{text:`👑 Gave ${prop.name}`})
+let list=getProps(target); list.push(id); userProps.set(target,list); await sock.sendMessage(jid,{text:`✅ Gave ${prop.name}`})
 }
 else if(t.startsWith('!removeprop')){
-if(!admin) return await sock.sendMessage(jid,{text:'Admin only'})
-let id=parseInt(a[a.length-1]); let list=getProps(target); userProps.set(target,list.filter(x=>x!==id)); await sock.sendMessage(jid,{text:`👑 Removed ${id}`})
+if(!admin) return
+let id=parseInt(a[a.length-1]); let list=getProps(target); userProps.set(target,list.filter(x=>x!==id)); await sock.sendMessage(jid,{text:`✅ Removed ${id}`})
 }
 else if(t.startsWith('!slots')){
 if(!a[1] || isNaN(parseInt(a[1]))) return await sock.sendMessage(jid,{text:'❌ Insert amount Ex: !slots 100'})
@@ -121,7 +120,6 @@ else if(roll<36){ let e=r[0]; r=[e,e,s(),s()].sort(()=>Math.random()-0.5) }
 else{ while(new Set(r).size<4) r=[s(),s(),s(),s()] }
 let counts={}; r.forEach(x=>counts[x]=(counts[x]||0)+1)
 let max=Math.max(...Object.values(counts))
-// NEW PAYOUTS: 4=15x, 3=7x, 2=2x
 let mult=max===4?15:max===3?7:max===2?2:0
 let txt=`🎰  ${r[0]}  ${r[1]}  ${r[2]}  ${r[3]}  🎰\n`
 if(mult>0){ let win=bet*mult; setBal(sender,getBal(sender)+win); txt+=`🎉 ${max===4?'4 KIND 15x':max===3?'3 KIND 7x':'2 KIND 2x'} +$${win}\n💰 $${getBal(sender)}` }
@@ -134,8 +132,8 @@ if(!a[2]) return await sock.sendMessage(jid,{text:'❌ heads/tails'})
 let bet=parseInt(a[1]); if(getBal(sender)<bet) return await sock.sendMessage(jid,{text:`❌ $${getBal(sender)}`})
 let flip=Math.random()<0.5?'heads':'tails'
 let guess=a[2].startsWith('h')?'heads':'tails'
-if(flip===guess){ setBal(sender,getBal(sender)+bet); await sock.sendMessage(jid,{text:`🎰  🪙  ${flip.toUpperCase()}  🪙  🎰\nWIN +$${bet} $${getBal(sender)}`}) }
-else{ setBal(sender,getBal(sender)-bet); await sock.sendMessage(jid,{text:`🎰  🪙  ${flip.toUpperCase()}  🪙  🎰\nLOSE -$${bet} $${getBal(sender)}`}) }
+if(flip===guess){ setBal(sender,getBal(sender)+bet); await sock.sendMessage(jid,{text:`🪙 ${flip.toUpperCase()}\nWIN +$${bet} $${getBal(sender)}`}) }
+else{ setBal(sender,getBal(sender)-bet); await sock.sendMessage(jid,{text:`🪙 ${flip.toUpperCase()}\nLOSE -$${bet} $${getBal(sender)}`}) }
 }
 else if(t.startsWith('!dice')){
 if(!a[1] || isNaN(parseInt(a[1]))) return await sock.sendMessage(jid,{text:'❌ Insert amount Ex: !dice 50 3'})
@@ -144,8 +142,8 @@ let bet=parseInt(a[1]); let guess=parseInt(a[2])
 if(guess<1||guess>6) return await sock.sendMessage(jid,{text:'❌ 1-6 only'})
 if(getBal(sender)<bet) return await sock.sendMessage(jid,{text:`❌ $${getBal(sender)}`})
 let roll=Math.floor(Math.random()*6)+1
-if(roll===guess){ setBal(sender,getBal(sender)+bet*5); await sock.sendMessage(jid,{text:`🎰  🎲  ${roll}  🎲  🎰\nWIN +$${bet*5} $${getBal(sender)}`}) }
-else{ setBal(sender,getBal(sender)-bet); await sock.sendMessage(jid,{text:`🎰  🎲  ${roll}  🎲  🎰\nLOSE -$${bet} $${getBal(sender)}`}) }
+if(roll===guess){ setBal(sender,getBal(sender)+bet*5); await sock.sendMessage(jid,{text:`🎲 ${roll}\nWIN +$${bet*5} $${getBal(sender)}`}) }
+else{ setBal(sender,getBal(sender)-bet); await sock.sendMessage(jid,{text:`🎲 ${roll}\nLOSE -$${bet} $${getBal(sender)}`}) }
 }
 else if(t==='!prop'){
 let txt='🏘️ SHOP\n\n'
