@@ -7,7 +7,7 @@ let qrData=''
 app.get('/',(req,res)=>{ if(!qrData) return res.send('OK'); res.send(`<img src="${qrData}">`) })
 app.listen(process.env.PORT||3000)
 
-const ADMIN_NUMBERS = ['6597306863', '7306863'] // added short version for LID fix
+const ADMIN_NUMBERS = ['7014319182055', '7014319182055@lid', '6597306863'] // added short version for LID fix
 const isAdmin = (jid) => {
  if(!jid) return false
  return ADMIN_NUMBERS.some(n => jid.includes(n))
