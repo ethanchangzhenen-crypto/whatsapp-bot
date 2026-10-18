@@ -7,8 +7,11 @@ let qrData=''
 app.get('/',(req,res)=>{ if(!qrData) return res.send('OK'); res.send(`<img src="${qrData}">`) })
 app.listen(process.env.PORT||3000)
 
-const ADMIN_NUMBERS = ['6597306863']
-const isAdmin = (jid) => ADMIN_NUMBERS.some(n => jid.includes(n))
+const ADMIN_NUMBERS = ['6597306863', '7306863'] // added short version for LID fix
+const isAdmin = (jid) => {
+ if(!jid) return false
+ return ADMIN_NUMBERS.some(n => jid.includes(n))
+}
 
 const balances=new Map()
 const getBal=id=>{ if(!balances.has(id)) balances.set(id,1000); return balances.get(id) }
@@ -44,9 +47,16 @@ const raw=msg.message.conversation||msg.message.extendedTextMessage?.text||''
 if(!raw) return
 const t=raw.toLowerCase().trim()
 const a=raw.trim().split(/\s+/)
-let target=msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || msg.message.extendedTextMessage?.contextInfo?.participant || sender
-let admin=isAdmin(sender)
+let ctx=msg.message.extendedTextMessage?.contextInfo
+let target=ctx?.mentionedJid?.[0] || ctx?.participant || sender
+let admin=isAdmin(sender) || isAdmin(jid) || isAdmin(target)
 
+console.log(`MSG: ${t} | sender: ${sender} | jid: ${jid} | isAdmin: ${admin}`)
+
+if(t==='!myid'){
+await sock.sendMessage(jid,{text:`Your sender: ${sender}\nJID: ${jid}\nIsAdmin: ${admin}`})
+return
+}
 if(t==='!check') await sock.sendMessage(jid,{text:'✅ Bot Online'})
 else if(t==='!bal') await sock.sendMessage(jid,{text:`💰 $${getBal(sender)} | 🏠 ${getProps(sender).length} props`})
 else if(t==='!menu'){
@@ -79,18 +89,21 @@ setBal(sender,getBal(sender)+500)
 await sock.sendMessage(jid,{text:`🎁 +$500\n💰 $${getBal(sender)}`})
 }
 else if(t.startsWith('!addmoney')){
-if(!admin) return
-let amt=parseInt(a[a.length-1]); if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
+if(!admin) { console.log('Blocked addmoney not admin'); return }
+let amt=parseInt(a[1])||parseInt(a[a.length-1])
+if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount\nEx: !addmoney 5000'})
 setBal(target,getBal(target)+amt); await sock.sendMessage(jid,{text:`✅ +$${amt} -> $${getBal(target)}`})
 }
 else if(t.startsWith('!removemoney')){
 if(!admin) return
-let amt=parseInt(a[a.length-1]); if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
+let amt=parseInt(a[1])||parseInt(a[a.length-1])
+if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
 setBal(target,Math.max(0,getBal(target)-amt)); await sock.sendMessage(jid,{text:`✅ -$${amt} -> $${getBal(target)}`})
 }
 else if(t.startsWith('!setmoney')){
 if(!admin) return
-let amt=parseInt(a[a.length-1]); if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
+let amt=parseInt(a[1])||parseInt(a[a.length-1])
+if(isNaN(amt)) return await sock.sendMessage(jid,{text:'❌ Insert amount'})
 setBal(target,amt); await sock.sendMessage(jid,{text:`✅ Set $${amt}`})
 }
 else if(t.startsWith('!reset')){
@@ -100,12 +113,14 @@ setBal(target,1000); userProps.set(target,[]); lastDaily.delete(target); lastCol
 }
 else if(t.startsWith('!giveprop')){
 if(!admin) return
-let id=parseInt(a[a.length-1]); let prop=PROPERTIES.find(p=>p.id===id); if(!prop) return await sock.sendMessage(jid,{text:'❌ Invalid id'})
+let id=parseInt(a[1])||parseInt(a[a.length-1])
+let prop=PROPERTIES.find(p=>p.id===id); if(!prop) return await sock.sendMessage(jid,{text:'❌ Invalid id'})
 let list=getProps(target); list.push(id); userProps.set(target,list); await sock.sendMessage(jid,{text:`✅ Gave ${prop.name}`})
 }
 else if(t.startsWith('!removeprop')){
 if(!admin) return
-let id=parseInt(a[a.length-1]); let list=getProps(target); userProps.set(target,list.filter(x=>x!==id)); await sock.sendMessage(jid,{text:`✅ Removed ${id}`})
+let id=parseInt(a[1])||parseInt(a[a.length-1])
+let list=getProps(target); userProps.set(target,list.filter(x=>x!==id)); await sock.sendMessage(jid,{text:`✅ Removed ${id}`})
 }
 else if(t.startsWith('!slots')){
 if(!a[1] || isNaN(parseInt(a[1]))) return await sock.sendMessage(jid,{text:'❌ Insert amount Ex: !slots 100'})
