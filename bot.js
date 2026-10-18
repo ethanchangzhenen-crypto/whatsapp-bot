@@ -40,10 +40,86 @@ async function start(){
     if(connection==='close'){ connected=false; setTimeout(start,2000) }
   })
 
-  sock.ev.on('messages.upsert', async ({messages})=>{
+    sock.ev.on('messages.upsert', async ({messages})=>{
     try{
       const msg = messages[0]
-      if(!msg || !msg.message || msg.key.fromMe) return
+      if(!msg || !msg.message) return
+      if(msg.key.remoteJid === 'status@broadcast') return
+      // Don't block owner - allow all except bot's own replies
+      // if(msg.key.fromMe) return  <-- REMOVED THIS LINE THAT BLOCKED YOU
+
+      let text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || ""
+      if(!text.startsWith('!')) return
+      console.log('CMD:', text, 'FROM:', msg.key.remoteJid)
+      const from = msg.key.remoteJid
+      const args = text.slice(1).trim().split(/ +/)
+      const cmd = args.shift().toLowerCase()
+      const uid = msg.key.participant || msg.key.remoteJid || from
+      let bal = get(`money_${uid}`,1000)
+      let lvl = get(`level_${uid}`,1)
+      let exp = get(`exp_${uid}`,0)
+      let today = getToday()
+
+      const send = async (t) => { 
+        await sock.sendMessage(from, {text:t}, {quoted: msg}) 
+      }
+
+      if(cmd==='menu'||cmd==='help'){
+        await send(`💰 *ECONOMY RPG - ALL COMMANDS*
+📅 Today ${today}
+
+🎰 !cf heads 100 / !slots 100 / !dice 3 100
+🌾 !farm / !crops plant wheat
+🐾 !pet / !pet feed / !pet play / !pet buy dog
+🎣 !fish / !fish sell / !fish inv
+👹 !hunt / !level
+🏠 !properties / !buy house / !properties collect
+📈 !stocks / !stocks buy TSLA 1 / !stocks portfolio
+🏁 !race
+📱 !qr <text>
+💵 !balance !daily !inventory !challenge
+
+Bal $${bal} LVL${lvl}`)
+      }
+      else if(cmd==='balance'||cmd==='bal'){ await send(`💵 Your Balance: $${bal}\nLVL${lvl} EXP ${exp}/1000 ${makeBar(exp,1000)}`) }
+      else if(cmd==='slots'){
+        let bet=parseInt(args[0])||100; 
+        if(bal<bet) return send(`❌ Need $${bet} | You have $${bal}`)
+        let s=['🍒','🍋','💎','7️⃣','🍀']; 
+        let a=s[Math.floor(Math.random()*5)],b=s[Math.floor(Math.random()*5)],c=s[Math.floor(Math.random()*5)]
+        if(a===b&&b===c){ 
+          let win=bet*5; 
+          let newBal=add(`money_${uid}`,win); 
+          await send(`🎰 [ ${a} | ${b} | ${c} ] JACKPOT!\n+ $${win}\n💰 New Balance: $${newBal}`) 
+        } else { 
+          let newBal=add(`money_${uid}`,-bet); 
+          await send(`🎰 [ ${a} | ${b} | ${c} ] LOSE -$${bet}\n💰 New Balance: $${newBal}`) 
+        }
+      }
+      else if(cmd==='cf'){
+        let choice=args[0]; let bet=parseInt(args[1])||100; 
+        if(bal<bet) return send(`❌ Need $${bet} | Have $${bal}`)
+        let res=Math.random()>0.5?'heads':'tails'
+        if(choice===res){ let win=Math.floor(bet*getBoost(lvl)); let newBal=add(`money_${uid}`,win); await send(`🪙 ${res.toUpperCase()} WIN +$${win}\n💰 New Balance: $${newBal}`) }
+        else{ let newBal=add(`money_${uid}`,-bet); await send(`🪙 ${res.toUpperCase()} LOSE -$${bet}\n💰 New Balance: $${newBal}`) }
+      }
+      else if(cmd==='dice'){
+        let guess=parseInt(args[0]); let bet=parseInt(args[1])||100; let roll=Math.floor(Math.random()*6)+1
+        if(guess===roll){ let newBal=add(`money_${uid}`,bet*3); await send(`🎲 Rolled ${roll} WIN +$${bet*3}\n💰 New Balance: $${newBal}`) } 
+        else { let newBal=add(`money_${uid}`,-bet); await send(`🎲 Rolled ${roll} You guessed ${guess} LOSE -$${bet}\n💰 New Balance: $${newBal}`) }
+      }
+      else if(cmd==='farm'){ let e=Math.floor(250*getBoost(lvl)); let newBal=add(`money_${uid}`,e); await send(`🌾 Farmed +$${e}\n💰 New Balance: $${newBal}`) }
+      else if(cmd==='fish'){ if(args[0]==='sell'){ let f=get(`fish_${uid}`,0); let v=f*50; set(`fish_${uid}`,0); let newBal=add(`money_${uid}`,v); await send(`🎣 Sold ${f} fish +$${v}\n💰 New Balance: $${newBal}`) } else if(args[0]==='inv'){ await send(`🎣 Fish: ${get(`fish_${uid}`,0)}`) } else { add(`fish_${uid}`,1); await send(`🎣 Caught! Total ${get(`fish_${uid}`,0)} | Bal $${bal}`) } }
+      else if(cmd==='hunt'){ let earn=Math.floor((100+Math.random()*200)*getBoost(lvl)); let newBal=add(`money_${uid}`,earn); add(`exp_${uid}`,50); await send(`👹 Killed monster! +$${earn}\n💰 New Balance: $${newBal} | EXP ${get(`exp_${uid}`,0)}/1000`) }
+      else if(cmd==='daily'){ add(`money_${uid}`,1000); await send(`🎁 Daily +$1000\n💰 New Balance: $${get(`money_${uid}`,0)}`) }
+      else if(cmd==='challenge'){ let prog=get(`challenge_${today}`,0); await send(`📅 ${today} ${prog} ${makeBar(prog,100)}`) }
+      else if(cmd==='qr'){ let link=args.join(' '); let url=`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(link)}`; await sock.sendMessage(from, {image:{url:url}, caption:`📱 QR: ${link}`}, {quoted:msg}) }
+      else if(cmd==='properties'){ await send(`🏠 House $10k / Mansion $50k / Hotel $100k\n!buy house`) }
+      else if(cmd==='buy'){ let costs={house:10000,mansion:50000,hotel:100000}; let type=args[0]; if(!costs[type]) return send(`!buy house/mansion/hotel`); if(bal<costs[type]) return send(`Need $${costs[type]} Have $${bal}`); add(`money_${uid}`,-costs[type]); add(`prop_${uid}_${type}`,1); await send(`🏠 Bought ${type}!\n💰 New Balance: $${get(`money_${uid}`,0)}`) }
+      else if(cmd==='stocks'){ await send(`📈 TSLA $200 !stocks buy TSLA 1`) }
+      else if(cmd==='race'){ await send(`🏁 Race done!`) }
+      else if(cmd==='pet'){ await send(`🐾 Pet !pet feed/play/buy`) }
+      else if(cmd==='inventory'||cmd==='inv'){ await send(`🎒 Bal $${bal} Fish ${get(`fish_${uid}`,0)}`) }
       let text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || ""
       if(!text.startsWith('!')) return
       console.log('CMD:', text)
