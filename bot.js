@@ -10,12 +10,18 @@ app.get('/', (req,res)=>{
 })
 app.listen(process.env.PORT||3000)
 
-// --- ECONOMY ---
+// ===== CONFIG =====
+const ADMIN_NUMBERS = ['6581234567'] // <--- CHANGE THIS TO YOUR PHONE NUMBER (without + or @, just number like 6581234567)
+const isAdmin = (jid) => {
+  return ADMIN_NUMBERS.some(num => jid.includes(num))
+}
+
+// ===== ECONOMY =====
 const balances = new Map()
 const getBal = (id) => { if(!balances.has(id)) balances.set(id, 1000); return balances.get(id) }
 const setBal = (id, amt) => balances.set(id, amt)
 
-// --- PROPERTIES SYSTEM ---
+// ===== PROPERTIES =====
 const PROPERTIES = {
   stall: { name: 'Food Stall', emoji: '🍜', price: 5000, income: 300, upgradeCost: 4000 },
   shop: { name: 'Shop', emoji: '🏪', price: 25000, income: 1500, upgradeCost: 20000 },
@@ -23,36 +29,19 @@ const PROPERTIES = {
   hotel: { name: 'Hotel', emoji: '🏨', price: 500000, income: 35000, upgradeCost: 400000 },
   mall: { name: 'Mall', emoji: '🏬', price: 2000000, income: 150000, upgradeCost: 1500000 },
 }
-const userProps = new Map() // jid -> { stall: level, shop: level ... }
-const getProps = (jid) => {
-  if(!userProps.has(jid)) userProps.set(jid, {})
-  return userProps.get(jid)
-}
+const userProps = new Map()
+const getProps = (jid) => { if(!userProps.has(jid)) userProps.set(jid, {}); return userProps.get(jid) }
 const getHourlyIncome = (jid) => {
-  let props=getProps(jid)
-  let total=0
-  for(let id in props){
-    let lvl=props[id]
-    let base=PROPERTIES[id].income
-    total+= base * lvl // level 1 = 1x, level 2 = 2x etc
-  }
+  let props=getProps(jid), total=0
+  for(let id in props) total+= PROPERTIES[id].income * props[id]
   return total
 }
-
-// --- HOURLY PAY LOOP ---
 setInterval(()=>{
-  console.log('Paying hourly income...')
-  for(let [jid, props] of userProps.entries()){
-    let income=getHourlyIncome(jid)
-    if(income>0){
-      setBal(jid, getBal(jid)+income)
-      console.log(`Paid ${jid} $${income}`)
-    }
+  for(let [jid] of userProps.entries()){
+    let inc=getHourlyIncome(jid)
+    if(inc>0) setBal(jid, getBal(jid)+inc)
   }
-}, 1000*60*60) // 1 hour
-
-// For testing, also pay every 5 minutes with smaller amount if you want, comment out the 1 hour above and use below:
-// setInterval(()=>{ ... }, 1000*60*5)
+}, 1000*60*60)
 
 async function start(){
   const { state, saveCreds } = await useMultiFileAuthState('auth')
@@ -67,96 +56,166 @@ async function start(){
     try{
       const msg=m.messages[0]
       if(!msg.message) return
-      if(msg.key.fromMe) return
       const jid=msg.key.remoteJid
+      const isGroup = jid.endsWith('@g.us')
+      let senderId = msg.key.participant || jid // in groups, participant is real sender
       const raw = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
       if(!raw) return
-      console.log('GOT:', raw)
       const lower=raw.trim().toLowerCase()
       const args=raw.trim().split(/\s+/)
-      
+      const isAdminUser = isAdmin(senderId)
+      console.log(`GOT: ${raw} | from ${senderId} | admin:${isAdminUser}`)
+
+      // GET TARGET FOR ADMIN COMMANDS (reply to user)
+      let targetId = jid
+      let mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
+      let replied = msg.message.extendedTextMessage?.contextInfo?.participant
+      if(mentioned) targetId = mentioned
+      else if(replied) targetId = replied
+      // if admin types !addmoney 1234 @user, target is mention, else target is the chat jid
+
       if(lower==='!check'){
         await sock.sendMessage(jid,{text:'✅ Bot Online'})
       } else if(lower.startsWith('!bal')){
-        let income=getHourlyIncome(jid)
-        await sock.sendMessage(jid,{text:`💰 Balance: $${getBal(jid)}\n📈 Hourly Income: $${income}/hr`})
-      } else if(lower==='!menu'){
-        await sock.sendMessage(jid,{text:`🎰 KAI CASINO
-!bal - balance
-!daily - $500 free
-!slots [amount]
-!cf [amount] [heads/tails]
-!dice [amount] [1-6]
-
-🏘️ PROPERTIES:
-!prop - list properties to buy
-!buy [name] - buy property
-!myprop - your properties
-!upgrade [name] - upgrade (more income)
-!collect - collect info`})
+        let income=getHourlyIncome(targetId)
+        await sock.sendMessage(jid,{text:`💰 Balance: $${getBal(targetId)}\n📈 Hourly: $${income}/hr`})
       
-      // --- PROPERTIES COMMANDS ---
-      } else if(lower==='!prop' || lower==='!properties' || lower==='!shop'){
-        let txt=`🏘️ PROPERTIES SHOP:\n\n`
+      // ===== NEW FULL MENU =====
+      } else if(lower==='!menu'){
+        let menu = `🎰 *KAI CASINO MENU* 🎰
+
+*💰 MONEY:*
+!bal - check balance + hourly income
+!daily - claim $500 free
+
+*🎲 GAMES (any bet amount):*
+!slots [amount] - 4 slots
+  4 same = 100x | 3 same = 20x
+  2 same = 2x | 0 same = lose
+!cf [amount] [heads/tails] - coinflip
+!dice [amount] [1-6] - guess dice 5x
+
+*🏘️ PROPERTIES (passive income):*
+!prop / !properties - shop list
+!buy [stall/shop/casino/hotel/mall]
+!myprop - your properties
+!upgrade [name] - upgrade for more /hr
+!collect - income info
+
+*🆘 HELP:*
+!menu - this menu
+`
+        if(isAdminUser){
+          menu += `
+*👑 ADMIN COMMANDS (only you):*
+!addmoney [@user] [amount] - give money
+!removemoney [@user] [amount] - take money
+!setmoney [@user] [amount] - set exact balance
+!reset [@user] - reset player to $1000 + no props
+!resetall - reset ALL players
+!giveprop [@user] [property] - give free property
+
+Example:
+!addmoney @john 50000
+or reply to user: !addmoney 10000
+`
+        }
+        await sock.sendMessage(jid,{text:menu})
+
+      // PROPERTIES
+      } else if(['!prop','!properties','!shop'].includes(lower)){
+        let txt=`🏘️ *PROPERTIES SHOP:*\n\n`
         for(let id in PROPERTIES){
           let p=PROPERTIES[id]
-          txt+=`${p.emoji} ${p.name} - $${p.price}\n   Income: $${p.income}/hr\n   Buy: !buy ${id}\n\n`
+          txt+=`${p.emoji} *${p.name}* - $${p.price}\n   Income: $${p.income}/hr | !buy ${id}\n\n`
         }
-        txt+=`You earn $${getHourlyIncome(jid)}/hr\nUse !myprop to see yours`
         await sock.sendMessage(jid,{text:txt})
       } else if(lower.startsWith('!buy')){
         let id=(args[1]||'').toLowerCase()
-        if(!PROPERTIES[id]) return await sock.sendMessage(jid,{text:`❌ Not found. Use: stall, shop, casino, hotel, mall\nExample: !buy stall`})
+        if(!PROPERTIES[id]) return await sock.sendMessage(jid,{text:`❌ Use: stall, shop, casino, hotel, mall`})
         let props=getProps(jid)
-        if(props[id]) return await sock.sendMessage(jid,{text:`❌ You already own ${PROPERTIES[id].name}. Use !upgrade ${id}`})
-        let price=PROPERTIES[id].price
-        if(getBal(jid)<price) return await sock.sendMessage(jid,{text:`❌ Need $${price} you have $${getBal(jid)}`})
-        setBal(jid, getBal(jid)-price)
+        if(props[id]) return await sock.sendMessage(jid,{text:`❌ Already own. !upgrade ${id}`})
+        if(getBal(jid)<PROPERTIES[id].price) return await sock.sendMessage(jid,{text:`❌ Need $${PROPERTIES[id].price}`})
+        setBal(jid, getBal(jid)-PROPERTIES[id].price)
         props[id]=1
-        await sock.sendMessage(jid,{text:`🎉 Bought ${PROPERTIES[id].emoji} ${PROPERTIES[id].name} Lv.1!\n💵 -$${price}\n📈 +$${PROPERTIES[id].income}/hr\n💰 Balance: $${getBal(jid)}`})
-      
-      } else if(lower==='!myprop' || lower==='!myprops'){
+        await sock.sendMessage(jid,{text:`🎉 Bought ${PROPERTIES[id].emoji} ${PROPERTIES[id].name} Lv.1!\n💰 Balance: $${getBal(jid)}`})
+      } else if(['!myprop','!myprops'].includes(lower)){
         let props=getProps(jid)
-        if(Object.keys(props).length===0) return await sock.sendMessage(jid,{text:`🏚️ You own nothing. Use !prop to buy`})
-        let txt=`🏘️ YOUR PROPERTIES:\n\n`
+        if(Object.keys(props).length===0) return await sock.sendMessage(jid,{text:`🏚️ No properties. !prop to buy`})
+        let txt=`🏘️ *YOUR PROPERTIES:*\n\n`
         let total=0
         for(let id in props){
-          let lvl=props[id]
-          let p=PROPERTIES[id]
-          let inc=p.income*lvl
+          let lvl=props[id], p=PROPERTIES[id], inc=p.income*lvl
           total+=inc
-          txt+=`${p.emoji} ${p.name} Lv.${lvl} - $${inc}/hr\n   Upgrade: !upgrade ${id} ($${p.upgradeCost*lvl})\n\n`
+          txt+=`${p.emoji} ${p.name} Lv.${lvl} - $${inc}/hr\n   !upgrade ${id} ($${p.upgradeCost*lvl})\n\n`
         }
-        txt+=`📈 Total: $${total}/hr\n💰 Balance: $${getBal(jid)}`
+        txt+=`📈 Total: $${total}/hr\n💰 $${getBal(jid)}`
         await sock.sendMessage(jid,{text:txt})
-      
       } else if(lower.startsWith('!upgrade')){
         let id=(args[1]||'').toLowerCase()
-        if(!PROPERTIES[id]) return await sock.sendMessage(jid,{text:`❌ Use: !upgrade stall / shop / casino / hotel / mall`})
+        if(!PROPERTIES[id]) return await sock.sendMessage(jid,{text:`❌ !upgrade stall/shop/casino/hotel/mall`})
         let props=getProps(jid)
-        if(!props[id]) return await sock.sendMessage(jid,{text:`❌ You don't own ${PROPERTIES[id].name}. Buy first: !buy ${id}`})
-        let lvl=props[id]
-        let cost=PROPERTIES[id].upgradeCost * lvl // cost grows with level
-        if(getBal(jid)<cost) return await sock.sendMessage(jid,{text:`❌ Upgrade to Lv.${lvl+1} costs $${cost} you have $${getBal(jid)}`})
+        if(!props[id]) return await sock.sendMessage(jid,{text:`❌ Don't own. !buy ${id}`})
+        let cost=PROPERTIES[id].upgradeCost*props[id]
+        if(getBal(jid)<cost) return await sock.sendMessage(jid,{text:`❌ Need $${cost}`})
         setBal(jid, getBal(jid)-cost)
-        props[id]=lvl+1
-        let newInc=PROPERTIES[id].income*(lvl+1)
-        await sock.sendMessage(jid,{text:`⬆️ Upgraded ${PROPERTIES[id].emoji} ${PROPERTIES[id].name} to Lv.${lvl+1}!\n💵 -$${cost}\n📈 New Income: $${newInc}/hr\n💰 Balance: $${getBal(jid)}`})
+        props[id]++
+        await sock.sendMessage(jid,{text:`⬆️ ${PROPERTIES[id].name} Lv.${props[id]}! Income $${PROPERTIES[id].income*props[id]}/hr\n💰 $${getBal(jid)}`})
+      } else if(['!collect','!income'].includes(lower)){
+        await sock.sendMessage(jid,{text:`📈 You earn $${getHourlyIncome(jid)}/hr auto. Balance $${getBal(jid)}`})
       
-      } else if(lower==='!collect' || lower==='!income'){
-        let inc=getHourlyIncome(jid)
-        if(inc===0) return await sock.sendMessage(jid,{text:`❌ You have no properties. Buy with !prop`})
-        await sock.sendMessage(jid,{text:`📈 You earn $${inc} every hour automatically!\n💰 Current Balance: $${getBal(jid)}\n⏰ Next pay in <60 minutes\nTip: Buy more with !prop or upgrade with !upgrade`})
+      // ===== ADMIN COMMANDS =====
+      } else if(lower.startsWith('!addmoney')){
+        if(!isAdminUser) return await sock.sendMessage(jid,{text:`❌ Admin only`})
+        let amount = parseInt(args[args.length-1].replace(/[^0-9]/g,''))
+        if(mentioned && args.length>=3) amount = parseInt(args[2].replace(/[^0-9]/g,''))
+        if(isNaN(amount)) return await sock.sendMessage(jid,{text:`Use: !addmoney [@user] 10000`})
+        setBal(targetId, getBal(targetId)+amount)
+        await sock.sendMessage(jid,{text:`👑 ADMIN: +$${amount} to ${targetId.split('@')[0]}\nNew balance: $${getBal(targetId)}`})
+      
+      } else if(lower.startsWith('!removemoney') || lower.startsWith('!takemoney')){
+        if(!isAdminUser) return await sock.sendMessage(jid,{text:`❌ Admin only`})
+        let amount = parseInt(args[args.length-1].replace(/[^0-9]/g,''))
+        if(isNaN(amount)) return await sock.sendMessage(jid,{text:`Use: !removemoney [@user] 1000`})
+        setBal(targetId, Math.max(0, getBal(targetId)-amount))
+        await sock.sendMessage(jid,{text:`👑 ADMIN: -$${amount} from ${targetId.split('@')[0]}\nNew balance: $${getBal(targetId)}`})
+      
+      } else if(lower.startsWith('!setmoney')){
+        if(!isAdminUser) return await sock.sendMessage(jid,{text:`❌ Admin only`})
+        let amount = parseInt(args[args.length-1].replace(/[^0-9]/g,''))
+        if(isNaN(amount)) return await sock.sendMessage(jid,{text:`Use: !setmoney [@user] 5000`})
+        setBal(targetId, amount)
+        await sock.sendMessage(jid,{text:`👑 ADMIN: Set ${targetId.split('@')[0]} to $${amount}`})
+      
+      } else if(lower.startsWith('!reset')){
+        if(!isAdminUser) return await sock.sendMessage(jid,{text:`❌ Admin only`})
+        if(lower==='!resetall'){
+          balances.clear(); userProps.clear()
+          return await sock.sendMessage(jid,{text:`👑 ADMIN: RESET ALL PLAYERS!`})
+        }
+        // !reset @user
+        balances.set(targetId, 1000)
+        userProps.set(targetId, {})
+        await sock.sendMessage(jid,{text:`👑 ADMIN: Reset ${targetId.split('@')[0]} to $1000 + no properties`})
+      
+      } else if(lower.startsWith('!giveprop')){
+        if(!isAdminUser) return await sock.sendMessage(jid,{text:`❌ Admin only`})
+        let propId=(args[2]||args[1]||'').toLowerCase()
+        if(args.length>=3) propId=args[2].toLowerCase()
+        else propId=args[1].toLowerCase()
+        if(!PROPERTIES[propId]) return await sock.sendMessage(jid,{text:`❌ !giveprop [@user] stall`})
+        let props=getProps(targetId)
+        props[propId]=(props[propId]||0)+1
+        await sock.sendMessage(jid,{text:`👑 ADMIN: Gave ${PROPERTIES[propId].name} to ${targetId.split('@')[0]} (Lv.${props[propId]})`})
 
-      // --- GAMES (your 3 layer ones) ---
+      // GAMES
       } else if(lower==='!daily'){
         setBal(jid, getBal(jid)+500)
-        await sock.sendMessage(jid,{text:`🎁 +$500! New: $${getBal(jid)}`})
+        await sock.sendMessage(jid,{text:`🎁 +$500! $${getBal(jid)}`})
       } else if(lower.startsWith('!slots')){
-        let bet = args[1] ? parseInt(args[1].replace(/[^0-9]/g,'')) : 100
+        let bet = args[1]?parseInt(args[1].replace(/[^0-9]/g,'')):100
         if(isNaN(bet)||bet<=0) bet=100
-        if(bet>1000000) bet=1000000
-        if(getBal(jid)<bet) return await sock.sendMessage(jid,{text:`❌ Need $${bet} you have $${getBal(jid)}`})
+        if(getBal(jid)<bet) return await sock.sendMessage(jid,{text:`❌ Need $${bet}`})
         let pool=['🍒','🍋','🔔','💎','7️⃣','🍇','🍀']
         const pick=()=>pool[Math.floor(Math.random()*pool.length)]
         const pickDiff=(ex=[])=>{let p;do{p=pick()}while(ex.includes(p));return p}
@@ -168,28 +227,23 @@ async function start(){
         else{ while(result.length<4) result.push(pickDiff(result)); outcome='LOSE'; mult=0 }
         let win= mult>0?bet*mult:bet
         if(mult>0) setBal(jid,getBal(jid)+win); else setBal(jid,getBal(jid)-win)
-        let top=`🎰  ${result[0]}  ${result[1]}  ${result[2]}  ${result[3]}  🎰`
-        let mid= mult>0?`💵 Bet: $${bet} | 🎉 WON: +$${win} (${outcome} ${mult}x)`:`💵 Bet: $${bet} | 💀 LOST: -$${win} (${outcome})`
-        await sock.sendMessage(jid,{text:`${top}\n${mid}\n💰 Balance: $${getBal(jid)}`})
+        await sock.sendMessage(jid,{text:`🎰  ${result[0]}  ${result[1]}  ${result[2]}  ${result[3]}  🎰\n${mult>0?`💵 Bet $${bet} | 🎉 WON +$${win} (${outcome} ${mult}x)`: `💵 Bet $${bet} | 💀 LOST -$${win} (${outcome})`}\n💰 Balance: $${getBal(jid)}`})
       } else if(lower.startsWith('!cf')){
         let bet=args[1]?parseInt(args[1].replace(/[^0-9]/g,'')):50
-        if(isNaN(bet)||bet<=0) bet=50
         let choice=(args[2]||'heads').toLowerCase(); if(choice==='h') choice='heads'; if(choice==='t') choice='tails'
         if(getBal(jid)<bet) return await sock.sendMessage(jid,{text:`❌ Need $${bet}`})
         let flip=Math.random()<0.5?'heads':'tails'
         let won=choice===flip
         if(won) setBal(jid,getBal(jid)+bet); else setBal(jid,getBal(jid)-bet)
-        await sock.sendMessage(jid,{text:`🎰  🪙  ${flip.toUpperCase()}  🪙  🎰\n💵 Bet: $${bet} on ${choice} | ${won?`🎉 WON: +$${bet}`:`💀 LOST: -$${bet}`}\n💰 Balance: $${getBal(jid)}`})
+        await sock.sendMessage(jid,{text:`🎰  🪙  ${flip.toUpperCase()}  🪙  🎰\n💵 Bet $${bet} on ${choice} | ${won?`🎉 WON +$${bet}`:`💀 LOST -$${bet}`}\n💰 Balance: $${getBal(jid)}`})
       } else if(lower.startsWith('!dice')){
         let bet=args[1]?parseInt(args[1].replace(/[^0-9]/g,'')):50
-        if(isNaN(bet)||bet<=0) bet=50
         let guess=parseInt(args[2])||3
         if(getBal(jid)<bet) return await sock.sendMessage(jid,{text:`❌ Need $${bet}`})
         let roll=Math.floor(Math.random()*6)+1
         let won=guess===roll
-        let winAmt=won?bet*5:bet
-        if(won) setBal(jid,getBal(jid)+winAmt); else setBal(jid,getBal(jid)-winAmt)
-        await sock.sendMessage(jid,{text:`🎰  🎲  ${roll}  🎲  🎰\n💵 Bet: $${bet} on ${guess} | ${won?`🎉 WON: +$${winAmt} (5x)`:`💀 LOST: -$${winAmt} (rolled ${roll})`}\n💰 Balance: $${getBal(jid)}`})
+        if(won) setBal(jid,getBal(jid)+bet*5); else setBal(jid,getBal(jid)-bet)
+        await sock.sendMessage(jid,{text:`🎰  🎲  ${roll}  🎲  🎰\n💵 Bet $${bet} on ${guess} | ${won?`🎉 WON +$${bet*5} (5x)`:`💀 LOST -$${bet} (rolled ${roll})`}\n💰 Balance: $${getBal(jid)}`})
       }
     }catch(e){ console.log('Error:', e) }
   })
