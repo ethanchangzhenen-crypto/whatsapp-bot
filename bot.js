@@ -10,8 +10,8 @@ const P = require('pino')({ level: 'silent' })
 
 // -------------------- CONFIG --------------------
 const ADMINS = ['6597306863@s.whatsapp.net', '6597306863']
-let users={},challenges={},lastQR=null,isConnected=false,settings={paused:false,gamesOn:true}
-let settings = { paused: false, timerOn: true }
+let users={},challenges={},lastQR=null,isConnected=false
+let settings = { paused: false, timerOn: true, gamesOn: true }
 
 const ITEMS = ['double', 'reverse', 'freeze', 'eraser', 'totem', 'charm']
 const EMOJI = { double: '💥', reverse: '🔄', freeze: '🧊', eraser: '💀', totem: '🗿', charm: '🍀' }
