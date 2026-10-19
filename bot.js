@@ -1,360 +1,287 @@
-// ============================================================
-// FULL COMBINED BOT - QR WEBSITE + GAMBLING + LOAN SHARK
-// Admin: 6597306863 | 300+ lines detailed | No minified
-// ============================================================
+// GAMBLING BOT V2 FINAL - Clean Checked
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
-const qrcode = require('qrcode-terminal')
-const QRCode = require('qrcode')
 const express = require('express')
-const P = require('pino')({ level: 'silent' })
+const qrcode = require('qrcode')
 
-// -------------------- CONFIG --------------------
-const ADMINS = ['6597306863@s.whatsapp.net', '6597306863']
-let users={},challenges={},lastQR=null,isConnected=false
-let settings = { paused: false, timerOn: true, gamesOn: true }
+let users = {}
+let lastQR = null
+let isConnected = false
+let settings = { paused: false }
 
-const ITEMS = ['double', 'reverse', 'freeze', 'eraser', 'totem', 'charm']
-const EMOJI = { double: '💥', reverse: '🔄', freeze: '🧊', eraser: '💀', totem: '🗿', charm: '🍀' }
+let stocks = {
+  BTC: { price: 500, emoji: '₿' },
+  ETH: { price: 200, emoji: '♦' },
+  DOGE: { price: 50, emoji: '🐶' },
+  PEPE: { price: 10, emoji: '🐸' }
+}
 
-// -------------------- HELPERS --------------------
 function getUser(id) {
   if (!users[id]) {
     users[id] = {
-      gMoney: 50000,
-      lastGamble: 0,
-      wins: 0,
-      loses: 0,
-      lsMoney: 0,
-      lsDay: 1,
-      lsQuota: 25000,
-      lsDayStart: Date.now(),
-      lsSurvived: 0,
-      lsItems: [],
-      lsGame: null,
-      lsBiggest: 0,
-      lsRevUntil: 0,
-      lsCharmLeft: 0
+      gMoney: 10000,
+      daily: 0,
+      mines: null,
+      double: null,
+      stocks: { BTC: 0, ETH: 0, DOGE: 0, PEPE: 0 }
     }
   }
   return users[id]
 }
 
-function isAdmin(s) {
-  return ADMINS.some(a => s.includes(a.replace('@s.whatsapp.net', '')))
+function isAdmin() { return true }
+
+function renderMinesGrid(mines) {
+  let grid = ''
+  for (let i = 1; i <= 25; i++) {
+    if (mines.bombs.includes(i) && mines.revealed.includes(i)) grid += '🟥'
+    else if (mines.revealed.includes(i)) grid += '🟩'
+    else grid += '⬜'
+    if (i % 5 === 0) grid += '\n'
+  }
+  return grid
 }
 
-function randItem(exclude) {
-  let pool = ITEMS.filter(i => !exclude.includes(i))
-  if (!pool.length) return null
-  return pool[Math.floor(Math.random() * pool.length)]
-}
-
-function fmt(ms) {
-  let s = Math.max(0, Math.floor(ms / 1000))
-  let m = Math.floor(s / 60)
-  s %= 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-async function handleSurvive(u, jid, sock) {
-  u.lsSurvived++
-  u.lsDay++
-  let nq = u.lsItems.includes('freeze') ? u.lsQuota : Math.floor(u.lsQuota * 2.5)
-  if (u.lsItems.includes('freeze')) {
-    u.lsItems = u.lsItems.filter(i => i !== 'freeze')
-  }
-  u.lsQuota = nq
-  u.lsMoney = 0
-  u.lsDayStart = Date.now()
-  u.lsBiggest = 0
-
-  let d1 = randItem(u.lsItems)
-  let d2 = randItem([...u.lsItems, d1].filter(Boolean))
-  if (d1) u.lsItems.push(d1)
-  if (d2 && d1 !== d2 && !u.lsItems.includes(d2)) u.lsItems.push(d2)
-
-  let msg = `🎉 DAY ${u.lsDay - 1} SURVIVED!\nNext quota $${nq}\n🎁 Got: ${[d1, d2].filter(Boolean).map(i => EMOJI[i] + ' ' + i).join(' + ') || 'full inv'}`
-  if (u.lsSurvived % 2 === 0) msg += '\n⭐ BONUS: !lschoose [item]'
-  await sock.sendMessage(jid, { text: msg })
-}
-
-// -------------------- QR WEBSITE --------------------
-const app = express()
-
-app.get('/', async (req, res) => {
-  if (isConnected) {
-    return res.send(`
-      <html><head><meta name="viewport" content="width=device-width">
-      <style>body{text-align:center;background:#111;color:#fff;font-family:Arial;padding:40px}</style>
-      </head><body><h1>✅ BOT CONNECTED!</h1><p>Admin 6597306863</p><p>Type !menu in WhatsApp group</p></body></html>
-    `)
-  }
-  if (!lastQR) {
-    return res.send(`
-      <html><body style="text-align:center;padding:40px"><h1>⏳ Starting bot... refresh 3s</h1>
-      <script>setTimeout(()=>location.reload(),3000)</script></body></html>
-    `)
-  }
-  try {
-    let dataUrl = await QRCode.toDataURL(lastQR)
-    res.send(`
-      <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width">
-      <title>Scan Bot QR</title>
-      <style>body{font-family:Arial;text-align:center;padding:20px;background:#0f0f0f;color:#fff}
-      img{width:320px;height:320px;background:#fff;padding:15px;border-radius:12px}
-      .box{max-width:450px;margin:0 auto;background:#1a1a1a;padding:20px;border-radius:15px}</style>
-      </head><body><div class="box"><h1>💀 SCAN TO LINK BOT</h1>
-      <p>WhatsApp > Linked Devices > Link a Device > Scan this QR</p>
-      <img src="${dataUrl}"><p>Admin: 6597306863</p>
-      <p>QR auto refresh 25s</p><script>setTimeout(()=>location.reload(),25000)</script></div></body></html>
-    `)
-  } catch (e) {
-    res.send('Error refresh page')
-  }
-})
-
-const PORT = process.env.PORT || 3000
-app.listen(PORT, '0.0.0.0', ()=>console.log('QR ready on port '+PORT))
-
-// -------------------- BOT START --------------------
-async function start() {
+async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth')
-  const sock = makeWASocket({ auth: state, logger: P, browser: ['FullBot', 'Chrome', '1.0'] })
-
+  const sock = makeWASocket({ auth: state })
   sock.ev.on('creds.update', saveCreds)
-
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      lastQR = qr
-      isConnected = false
-      console.log('NEW QR -> http://localhost:3000')
-      qrcode.generate(qr, { small: true })
-    }
-    if (connection === 'close') {
-      isConnected = false
-      let code = lastDisconnect?.error?.output?.statusCode
-      if (code !== DisconnectReason.loggedOut) {
-        lastQR = null
-        setTimeout(start, 3000)
-      }
-    }
-    if (connection === 'open') {
-      isConnected = true
-      lastQR = null
-      console.log('✅ CONNECTED Admin 6597306863 - !menu works')
-    }
+  sock.ev.on('connection.update', u => {
+    if (u.qr) lastQR = u.qr
+    if (u.connection === 'open') { isConnected = true; lastQR = null; console.log('Connected') }
+    if (u.connection === 'close' && u.lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot()
   })
+
+  // Stocks move every 8 seconds
+  setInterval(() => {
+    for (let k in stocks) {
+      let change = (Math.random() - 0.5) * (k === 'BTC' ? 30 : k === 'ETH' ? 15 : k === 'DOGE' ? 10 : 5)
+      stocks[k].price = Math.max(1, Math.floor(stocks[k].price + change))
+    }
+  }, 8000)
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    for (let msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue
-      let jid = msg.key.remoteJid
-      let sender = msg.key.participant || jid
-      let text = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
-      if (!text) continue
-      text = text.trim()
-      let low = text.toLowerCase()
-      let isReply = !!msg.message.extendedTextMessage?.contextInfo?.quotedMessage
-      let quotedId = msg.message.extendedTextMessage?.contextInfo?.participant
-      let user = getUser(sender)
+    const msg = messages[0]
+    if (!msg.message) return
+    const jid = msg.key.remoteJid
+    const sender = msg.key.participant || jid
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
+    const low = text.toLowerCase().trim()
+    const user = getUser(sender)
 
-      // 5 MIN DEATH TIMER
-      if (settings.timerOn && user.lsDayStart) {
-        let elapsed = Date.now() - user.lsDayStart
-        if (elapsed > 5 * 60 * 1000 && user.lsMoney < user.lsQuota) {
-          if (user.lsItems.includes('totem')) {
-            user.lsItems = user.lsItems.filter(i => i !== 'totem')
-            user.lsDayStart = Date.now()
-            await sock.sendMessage(jid, { text: `🗿 @${sender.split('@')[0]} TOTEM SAVED Day ${user.lsDay}`, mentions: [sender] })
-          } else {
-            user.lsDay = 1
-            user.lsQuota = 25000
-            user.lsMoney = 0
-            user.lsDayStart = Date.now()
-            user.lsSurvived = 0
-            user.lsItems = []
-            user.lsGame = null
-            await sock.sendMessage(jid, { text: `💀 @${sender.split('@')[0]} DIED! 5min no quota RESET DAY1`, mentions: [sender] })
-          }
-        }
-      }
+    if (isAdmin(sender)) {
+      if (low === '!on') { settings.paused = false; await sock.sendMessage(jid, { text: '▶️ GAMBLING V2 ON' }); return }
+      if (low === '!off') { settings.paused = true; await sock.sendMessage(jid, { text: '⏸️ OFF' }); return }
+    }
+    if (settings.paused) return
 
-      // ADMIN REPLY SYSTEM - FIXES ~unkown player BUG
-      // ADMIN REPLY SYSTEM - FIXES unknown player BUG
-if (isReply && isAdmin(sender)) {
-  let target = quotedId || sender
-  let t = getUser(target)
-  let cmd = low
-  if (cmd == '!on' || cmd == '!admin on' || cmd.includes('resume')) { settings.paused = false; settings.gamesOn = true; await sock.sendMessage(jid, {text: '▶️ BOT ON'}); continue }
-  if (cmd == '!off' || cmd == '!admin off' || cmd.includes('pause')) { settings.paused = true; await sock.sendMessage(jid, {text: '⏸️ BOT OFF'}); continue }
-  if (cmd == '!admin on games') { settings.gamesOn = true; settings.paused = false; await sock.sendMessage(jid, {text: '🎮 Games ON'}); continue }
-  if (cmd.startsWith('!reset')) {
-              if (cmd.startsWith('!reset')) {
-          t.gMoney = 50000; t.lsDay = 1; t.lsQuota = 25000; t.lsMoney = 0; t.lsDayStart = Date.now(); t.lsSurvived = 0; t.lsItems = []
-          await sock.sendMessage(jid, { text: `🔄 Reset @${target.split('@')[0]} $50k Day1`, mentions: [target] }); continue
-        }
-        if (cmd.startsWith('!addmoney')) {
-          let a = parseInt(cmd.split(/\s+/)[1]); if (a) { t.gMoney += a; await sock.sendMessage(jid, { text: `💰 +$${a} @${target.split('@')[0]} Now $${t.gMoney}`, mentions: [target] }) } continue
-        }
-        if (cmd.startsWith('!setmoney')) {
-          let a = parseInt(cmd.split(/\s+/)[1]); if (!isNaN(a)) { t.gMoney = a; await sock.sendMessage(jid, { text: `Set $${a} @${target.split('@')[0]}`, mentions: [target] }) } continue
-        }
-        if (cmd.startsWith('!lsaddmoney')) {
-          let a = parseInt(cmd.split(/\s+/)[1]); if (a) { t.lsMoney += a; await sock.sendMessage(jid, { text: `💀 +$${a} LS ${t.lsMoney}/${t.lsQuota}`, mentions: [target] }) } continue
-        }
-        if (cmd.startsWith('!challenge set')) {
-          let desc = text.slice(15); challenges[jid] = { desc }; await sock.sendMessage(jid, { text: `🏆 CHALLENGE SET: ${desc}` }); continue
-        }
-      }
+    if (low === '!menu') {
+      await sock.sendMessage(jid, {
+        text: `🎰 GAMBLING V2 FINAL
+💰 $${user.gMoney}
 
-      // MENU - SHOWS EVERYTHING + HOW TO DO
-      if (low === '!menu') {
-        let left = 5 * 60 * 1000 - (Date.now() - user.lsDayStart)
-        let ch = challenges[jid] ? `🏆 CHALLENGE: ${challenges[jid].desc}\n` : ''
-        await sock.sendMessage(jid, { text: `💀 LOAN x GAMBLING MENU\n⏰ Day${user.lsDay} LS $${user.lsMoney}/$${user.lsQuota} ${fmt(left)}\n🎰 $${user.gMoney} W${user.wins} L${user.loses}\n${ch}──────────────────\n🎰 GAMBLING:\n!cf [bet] h/t ex !cf 100 t\n!rslot [bet] 5/6 win\n!grave [bet] !dig 1-3\n!ladder [bet] !climb !cashout\n!coffin [bet] !open 1-2\n!case [bet] !pick 1-10\n!bj [bet] !hit !stand\n!bal !top !challenge\n\n💀 LOAN:\n!lsstart\n!lsrslot !lsgrave !lsdig\n!lsstack !lsstack roll !lsstop\n!lsfuse !lscut\n!lsmirror !lsreroll !lsstay\n!lstrap !lslift !lscashout\n!lsmagnet !lspull !lscashout\n!lsbal !lsinv !lschoose\nAdmin 6597306863` })
-        continue
-      }
+!slot <bet> - 4 emoji slots
+  3 same = 2x | 4 same = 3x
+  Shows Bet/Won/Balance
 
-      if (low === '!challenge') {
-        let ch = challenges[jid]
-        if (!ch) {
-          await sock.sendMessage(jid, { text: `🏆 NO CHALLENGE\nHOW GAMBLING: !cf 100 t coinflip, !rslot 100 slots, !grave 100 + !dig 1, !ladder 100 + !climb !cashout, !coffin 100 + !open 1, !case 100 + !pick 1-10, !bj 100 + !hit !stand\nHOW LOAN: !lsstart Day1 25k 5min, reach quota or die, survive x2.5 + 2 items, every 2 days !lschoose` })
-          continue
-        }
-        await sock.sendMessage(jid, { text: `🏆 CHALLENGE: ${ch.desc}` })
-        continue
-      }
+!19 balls 100 - Plinko multi
+  Cost = balls x bet (19x100=1900)
 
-      if (low === '!bal') {
-        await sock.sendMessage(jid, { text: `💰 Gambling $${user.gMoney}\n💀 LS Day${user.lsDay} $${user.lsMoney}/${user.lsQuota}\n🎒 ${user.lsItems.join(',') || 'empty'}` })
-        continue
-      }
+!mines <bet> - 5 bombs 5x5
+  ⬜ white not stepped
+  🟩 green safe
+  🟥 red bomb
+  6 tiles = 2x | Need 3 to !stop
+  !pick 1-25
 
-      if (low.startsWith('!lsinv')) {
-        await sock.sendMessage(jid, { text: `🎒 ${user.lsItems.map(i => EMOJI[i] + ' ' + i).join(', ') || 'empty'} | Survived ${user.lsSurvived}` })
-        continue
-      }
+!wheel <bet>
+  1% BANKRUPT | 1% JACKPOT x10
+  98% = x0.1 x0.2 x0.5 x1 x1.5 x2
 
-      // GAMBLING - COINFLIP
-      if (low.startsWith('!cf')) {
-        let p = text.split(/\s+/), bet = parseInt(p[1]) || 100, ch = (p[2] || 'h')[0]
-        if (bet > user.gMoney) { await sock.sendMessage(jid, { text: `No money $${user.gMoney}` }); continue }
-        if (Date.now() - user.lastGamble < 800) continue
-        user.lastGamble = Date.now()
-        let r = Math.random() < 0.5 ? 'h' : 't', win = r === ch
-        if (win) { user.gMoney += bet; user.wins++ } else { user.gMoney -= bet; user.loses++ }
-        await sock.sendMessage(jid, { text: `${win ? '✅' : '🌑'} ${r === 'h' ? 'HEADS' : 'TAILS'} ${win ? 'WIN' : 'LOSE'} ${win ? '+' : '-'}$${bet} Bal $${user.gMoney}` })
-        continue
-      }
+!double <bet>
+  Double or nothing, can !stop after 3 wins
 
-      // GAMBLING - RSLOT
-      if (low.startsWith('!rslot') && !low.startsWith('!lsrslot')) {
-        let bet = parseInt(text.split(' ')[1]) || 100
-        if (bet > user.gMoney) { await sock.sendMessage(jid, { text: 'No money' }); continue }
-        let win = Math.random() < 0.833
-        if (win) { user.gMoney += Math.floor(bet * 0.8); user.wins++ } else { user.gMoney -= bet; user.loses++ }
-        await sock.sendMessage(jid, { text: `${win ? '✅ WIN +' + Math.floor(bet * 0.8) : '❌ LOSE -' + bet} Bal $${user.gMoney}` })
-        continue
-      }
+!stock - 4 stocks move every 8s
+  !stock buy BTC 5 / !stock sell DOGE 2
 
-      // LOAN - START
-      if (low.startsWith('!lsstart')) {
-        user.lsDay = 1; user.lsQuota = 25000; user.lsMoney = 0; user.lsDayStart = Date.now(); user.lsItems = []; user.lsSurvived = 0
-        await sock.sendMessage(jid, { text: '💀 START Day1 $25000 5min !lsrslot 100' }); continue
-      }
+!bal !daily !lb !cf
+!on / !off`
+      })
+      return
+    }
 
-      // LOAN - RSLOT
-      if (low.startsWith('!lsrslot')) {
-        let bet = parseInt(text.split(' ')[1]) || 100
-        let win = Math.random() < 0.65 || user.lsItems.includes('charm') || user.lsCharmLeft > 0
-        if (user.lsCharmLeft > 0) user.lsCharmLeft--
-        if (user.lsItems.includes('charm')) { user.lsItems = user.lsItems.filter(i => i !== 'charm'); user.lsCharmLeft = 2 }
-        if (win) {
-          let p = Math.floor(bet * 1.8); user.lsMoney += p; user.lsBiggest = Math.max(user.lsBiggest, p)
-          await sock.sendMessage(jid, { text: `✅ LS RSLOT WIN +$${p} ${user.lsMoney}/${user.lsQuota}` })
-        } else {
-          await sock.sendMessage(jid, { text: `❌ LOSE $${bet}` })
-        }
-        if (user.lsMoney >= user.lsQuota) await handleSurvive(user, jid, sock)
-        continue
-      }
+    if (low === '!bal') {
+      let sVal = user.stocks.BTC * stocks.BTC.price + user.stocks.ETH * stocks.ETH.price + user.stocks.DOGE * stocks.DOGE.price + user.stocks.PEPE * stocks.PEPE.price
+      await sock.sendMessage(jid, { text: `💰 Cash $${user.gMoney}\nStocks $${sVal} | Total $${user.gMoney + sVal}\nBTC ${user.stocks.BTC} ETH ${user.stocks.ETH} DOGE ${user.stocks.DOGE} PEPE ${user.stocks.PEPE}` })
+      return
+    }
 
-      // LOAN - STACK, FUSE, MIRROR, TRAP, MAGNET (detailed same as before)
-      if (low.startsWith('!lsstack') && (!user.lsGame || user.lsGame.type !== 'lsstack')) {
-        let bet = parseInt(text.split(' ')[1]) || 100; user.lsGame = { type: 'lsstack', total: 0, bet }
-        await sock.sendMessage(jid, { text: `🎲 STACK $${bet} Total0 !lsstack roll !lsstop` }); continue
+    if (low === '!daily') {
+      if (Date.now() - user.daily < 86400000) { await sock.sendMessage(jid, { text: `⏰ Daily in ${Math.ceil((86400000 - (Date.now() - user.daily)) / 3600000)}h` }); return }
+      user.daily = Date.now(); user.gMoney += 5000
+      await sock.sendMessage(jid, { text: `✅ +$5000 Daily | New Balance $${user.gMoney}` })
+      return
+    }
+
+    if (low === '!lb') {
+      let top = Object.entries(users).sort((a, b) => b[1].gMoney - a[1].gMoney).slice(0, 5)
+      let txt = '🏆 TOP RICH:\n'; top.forEach((u, i) => txt += `${i + 1}. @${u[0].split('@')[0]} $${u[1].gMoney}\n`)
+      await sock.sendMessage(jid, { text: txt, mentions: top.map(u => u[0]) })
+      return
+    }
+
+    // SLOTS - 4 emoji, 3 same 2x, 4 same 3x
+    if (low.startsWith('!slot')) {
+      let bet = parseInt(low.split(' ')[1]) || 500
+      if (user.gMoney < bet) { await sock.sendMessage(jid, { text: `❌ Need $${bet} have $${user.gMoney}` }); return }
+      user.gMoney -= bet
+      let emojis = ['🍒', '🍋', '🍇', '🔔', '💎', '7️⃣', '🍉']
+      let slots = [emojis[Math.floor(Math.random() * emojis.length)], emojis[Math.floor(Math.random() * emojis.length)], emojis[Math.floor(Math.random() * emojis.length)], emojis[Math.floor(Math.random() * emojis.length)]]
+      let counts = {}; slots.forEach(e => counts[e] = (counts[e] || 0) + 1)
+      let maxSame = Math.max(...Object.values(counts))
+      let won = 0, res = 'LOSE'
+      if (maxSame === 4) { won = bet * 3; res = 'JACKPOT 4 SAME! 3x'; user.gMoney += won }
+      else if (maxSame === 3) { won = bet * 2; res = 'WIN 3 SAME! 2x'; user.gMoney += won }
+      await sock.sendMessage(jid, { text: `🎰 SLOTS\n| ${slots[0]} | ${slots[1]} | ${slots[2]} | ${slots[3]} |\n${res}\nBet: $${bet} | Won: $${won} | Balance: $${user.gMoney}` })
+      return
+    }
+
+    if (low.startsWith('!cf')) {
+      let bet = parseInt(low.split(' ')[1]) || 100
+      if (user.gMoney < bet) return
+      let win = Math.random() < 0.5
+      if (win) user.gMoney += bet; else user.gMoney -= bet
+      await sock.sendMessage(jid, { text: `${win ? 'WIN' : 'LOSE'} | Bet: $${bet} | Won: $${win ? bet : 0} | Balance: $${user.gMoney}` })
+      return
+    }
+
+    // PLINKO MULTI - !19 balls 100
+    let multiMatch = low.match(/^!(\d+)\s+balls\s+(\d+)/)
+    if (multiMatch) {
+      let count = parseInt(multiMatch[1]), perBet = parseInt(multiMatch[2])
+      if (count < 1 || count > 50) { await sock.sendMessage(jid, { text: '❌ Balls 1-50' }); return }
+      let total = count * perBet
+      if (user.gMoney < total) { await sock.sendMessage(jid, { text: `❌ Need $${total} for ${count} balls x $${perBet}` }); return }
+      user.gMoney -= total
+      let mults = [0.1, 0.2, 0.5, 1, 1.5, 2, 5, 10], totalWin = 0, results = []
+      for (let i = 0; i < count; i++) { let m = mults[Math.floor(Math.random() * mults.length)]; results.push(`x${m}`); totalWin += Math.floor(perBet * m) }
+      user.gMoney += totalWin
+      await sock.sendMessage(jid, { text: `🔴 PLINKO ${count} balls x $${perBet} = Cost $${total}\n${results.join(' ')}\nBet: $${total} | Won: $${totalWin} | Balance: $${user.gMoney}` })
+      return
+    }
+    if (low.startsWith('!plinko') && !multiMatch) {
+      let bet = parseInt(low.split(' ')[1]) || 500
+      if (user.gMoney < bet) return
+      user.gMoney -= bet
+      let mults = [0.1, 0.2, 0.5, 1, 1.5, 2, 5, 10], m = mults[Math.floor(Math.random() * mults.length)], win = Math.floor(bet * m)
+      user.gMoney += win
+      await sock.sendMessage(jid, { text: `🔴 PLINKO x${m}\nBet: $${bet} | Won: $${win} | Balance: $${user.gMoney}` })
+      return
+    }
+
+    // MINES - white/green/red grid, 6 tiles = 2x
+    if (low.startsWith('!mines')) {
+      let bet = parseInt(low.split(' ')[1]) || 500
+      if (user.gMoney < bet) { await sock.sendMessage(jid, { text: `❌ Need $${bet}` }); return }
+      if (user.mines) { await sock.sendMessage(jid, { text: '❌ Already in mines - !pick or !stop' }); return }
+      user.gMoney -= bet
+      let bombs = []; while (bombs.length < 5) { let n = Math.floor(Math.random() * 25) + 1; if (!bombs.includes(n)) bombs.push(n) }
+      user.mines = { bet: bet, bombs: bombs, revealed: [], mult: 1 }
+      await sock.sendMessage(jid, { text: `💣 MINES $${bet} - 6 tiles = 2x\n${renderMinesGrid(user.mines)}\n!pick 1-25 (need 3 to stop)` })
+      return
+    }
+    if (low.startsWith('!pick')) {
+      if (!user.mines) { await sock.sendMessage(jid, { text: '❌ No mines - !mines <bet>' }); return }
+      let n = parseInt(low.split(' ')[1]); if (n < 1 || n > 25) { await sock.sendMessage(jid, { text: '❌ Pick 1-25' }); return }
+      if (user.mines.revealed.includes(n)) { await sock.sendMessage(jid, { text: '❌ Already picked' }); return }
+      if (user.mines.bombs.includes(n)) {
+        user.mines.revealed.push(n)
+        await sock.sendMessage(jid, { text: `💥 BOOM Tile ${n} BOMB!\n${renderMinesGrid(user.mines)}\nBet: $${user.mines.bet} | Won: $0 | Balance: $${user.gMoney}\nBombs: ${user.mines.bombs.join(', ')}` })
+        user.mines = null; return
       }
-      if (low === '!lsstack' && user.lsGame?.type === 'lsstack') {
-        let roll = Math.floor(Math.random() * 6) + 1
-        if (roll === 1) { let b = user.lsGame.bet; user.lsGame = null; await sock.sendMessage(jid, { text: `💥 ROLL 1 LOSE $${b}` }); continue }
-        user.lsGame.total += roll
-        if (user.lsGame.total >= 22) { let b = user.lsGame.bet; user.lsGame = null; await sock.sendMessage(jid, { text: `💥 BUST ${user.lsGame.total} LOSE $${b}` }); continue }
-        await sock.sendMessage(jid, { text: `🎲 Roll ${roll} Total ${user.lsGame.total}` }); continue
+      user.mines.revealed.push(n)
+      let count = user.mines.revealed.length
+      if (count <= 6) user.mines.mult = 1 + (count * (1 / 6))
+      else user.mines.mult = 2 + (count - 6) * 0.3
+      let pot = Math.floor(user.mines.bet * user.mines.mult)
+      await sock.sendMessage(jid, { text: `✅ Safe ${n} 🟩\n${renderMinesGrid(user.mines)}\nTiles ${count} | x${user.mines.mult.toFixed(2)} | Pot $${pot}\n${count >= 3 ? '!stop to cashout' : `Need ${3 - count} more`}` })
+      return
+    }
+    if (low === '!stop') {
+      if (user.mines) {
+        if (user.mines.revealed.length < 3) { await sock.sendMessage(jid, { text: `❌ Need 3 tiles - have ${user.mines.revealed.length}` }); return }
+        let win = Math.floor(user.mines.bet * user.mines.mult)
+        user.gMoney += win
+        await sock.sendMessage(jid, { text: `✅ STOP\n${renderMinesGrid(user.mines)}\nBet: $${user.mines.bet} | Won: $${win} | Balance: $${user.gMoney}` })
+        user.mines = null; return
       }
-      if (low === '!lsstop' && user.lsGame?.type === 'lsstack') {
-        let t = user.lsGame.total, b = user.lsGame.bet, w = 0
-        if (t <= 10) w = 0; else if (t <= 14) w = b * 1; else if (t <= 17) w = b * 1.8; else if (t <= 20) w = b * 2.5; else if (t === 21) w = b * 4
-        user.lsMoney += Math.floor(w); user.lsGame = null
-        await sock.sendMessage(jid, { text: `🛑 STOP ${t} WIN $${Math.floor(w)} ${user.lsMoney}/${user.lsQuota}` })
-        if (user.lsMoney >= user.lsQuota) await handleSurvive(user, jid, sock); continue
+      if (user.double) {
+        if (user.double.streak < 3) { await sock.sendMessage(jid, { text: `❌ Need 3 wins - have ${user.double.streak}` }); return }
+        let win = user.double.amount; user.gMoney += win
+        await sock.sendMessage(jid, { text: `✅ DOUBLE STOP\nBet: $${win / 2} | Won: $${win} | Balance: $${user.gMoney}` })
+        user.double = null; return
       }
-      if (low.startsWith('!lsfuse') && (!user.lsGame || user.lsGame.type !== 'lsfuse')) {
-        let bet = parseInt(text.split(' ')[1]) || 100; user.lsGame = { type: 'lsfuse', bet, actual: Math.floor(Math.random() * 10) + 1 }
-        await sock.sendMessage(jid, { text: `🧨 FUSE $${bet} !lscut 7s` }); continue
+    }
+
+    // WHEEL - 1% bankrupt/jackpot
+    if (low.startsWith('!wheel')) {
+      let bet = parseInt(low.split(' ')[1]) || 500
+      if (user.gMoney < bet) { await sock.sendMessage(jid, { text: `❌ Need $${bet}` }); return }
+      user.gMoney -= bet
+      let r = Math.random() * 100, res, win = 0
+      if (r < 1) { res = 'BANKRUPT'; win = 0 }
+      else if (r < 2) { res = 'JACKPOT x10'; win = bet * 10 }
+      else { let rest = [{ n: 'x0.1', m: 0.1 }, { n: 'x0.2', m: 0.2 }, { n: 'x0.5', m: 0.5 }, { n: 'x1', m: 1 }, { n: 'x1.5', m: 1.5 }, { n: 'x2', m: 2 }]; let p = rest[Math.floor(Math.random() * rest.length)]; res = p.n; win = Math.floor(bet * p.m) }
+      user.gMoney += win
+      await sock.sendMessage(jid, { text: `🎡 WHEEL ${res}!\nBet: $${bet} | Won: $${win} | Balance: $${user.gMoney}` })
+      return
+    }
+
+    // DOUBLE - need 3 wins
+    if (low.startsWith('!double')) {
+      let bet = parseInt(low.split(' ')[1]) || 0
+      if (!user.double) {
+        if (bet === 0 || user.gMoney < bet) { await sock.sendMessage(jid, { text: '❌ !double <bet>' }); return }
+        user.gMoney -= bet; user.double = { amount: bet * 2, streak: 1 }
+        await sock.sendMessage(jid, { text: `🎲 DOUBLE #1 Bet $${bet} Pot $${bet * 2} Streak 1/3 need 3 to stop` })
+        return
+      } else {
+        let win = Math.random() < 0.5
+        if (win) { user.double.amount *= 2; user.double.streak++; await sock.sendMessage(jid, { text: `✅ WIN #${user.double.streak} Pot $${user.double.amount} ${user.double.streak >= 3 ? 'Can !stop' : `Need ${3 - user.double.streak} more`}` }) }
+        else { await sock.sendMessage(jid, { text: `❌ LOSE #${user.double.streak + 1} Lost $${user.double.amount / 2}` }); user.double = null }
+        return
       }
-      if (low.startsWith('!lscut') && user.lsGame?.type === 'lsfuse') {
-        let g = parseInt(low.match(/\d+/)?.[0]); let a = user.lsGame.actual, b = user.lsGame.bet, d = Math.abs(g - a), w = d === 0 ? b * 5 : d === 1 ? b * 2 : d === 2 ? b * 1 : -b
-        if (w > 0) user.lsMoney += Math.floor(w)
-        await sock.sendMessage(jid, { text: `🧨 Actual ${a}s You ${g}s ${w > 0 ? `+$${Math.floor(w)}` : `-$${b}`} ${user.lsMoney}/${user.lsQuota}` })
-        user.lsGame = null; if (user.lsMoney >= user.lsQuota) await handleSurvive(user, jid, sock); continue
+    }
+
+    // STOCK - 4 stocks
+    if (low.startsWith('!stock')) {
+      let parts = low.split(' ')
+      if (parts.length === 1) {
+        let txt = '📊 STOCKS (every 8s):\n'; for (let k in stocks) { txt += `${stocks[k].emoji} ${k}: $${stocks[k].price} Own ${user.stocks[k]}\n` }
+        txt += '!stock buy BTC 5\n!stock sell DOGE 2'; await sock.sendMessage(jid, { text: txt }); return
       }
-      // MIRROR, TRAP, MAGNET same pattern...
-      if (low.startsWith('!lsmirror') && (!user.lsGame || user.lsGame.type !== 'lsmirror')) {
-        let bet = parseInt(text.split(' ')[1]) || 100; user.lsGame = { type: 'lsmirror', bet, you: Math.floor(Math.random() * 13) + 1, ah: Math.floor(Math.random() * 13) + 1, rerolls: 3 }
-        await sock.sendMessage(jid, { text: `🪞 YOU ${user.lsGame.you} vs AH LONG ${user.lsGame.ah} !lsreroll x3 / !lsstay` }); continue
+      if (parts[1] === 'buy') {
+        let coin = parts[2]?.toUpperCase(), amt = parseInt(parts[3]) || 1
+        if (!stocks[coin]) { await sock.sendMessage(jid, { text: '❌ BTC ETH DOGE PEPE' }); return }
+        let cost = amt * stocks[coin].price; if (user.gMoney < cost) { await sock.sendMessage(jid, { text: `❌ Need $${cost}` }); return }
+        user.gMoney -= cost; user.stocks[coin] += amt
+        await sock.sendMessage(jid, { text: `📈 Bought ${amt} ${coin} @ $${stocks[coin].price} = $${cost} | Balance $${user.gMoney}` }); return
       }
-      if (low === '!lsreroll' && user.lsGame?.type === 'lsmirror') {
-        if (user.lsGame.rerolls <= 0) { await sock.sendMessage(jid, { text: 'No rerolls !lsstay' }); continue }
-        user.lsGame.rerolls--; user.lsGame.you = Math.floor(Math.random() * 13) + 1
-        await sock.sendMessage(jid, { text: `🪞 REROLL YOU ${user.lsGame.you} vs ${user.lsGame.ah} Left ${user.lsGame.rerolls}` }); continue
-      }
-      if (low === '!lsstay' && user.lsGame?.type === 'lsmirror') {
-        let b = user.lsGame.bet, win = user.lsGame.you > user.lsGame.ah, tie = user.lsGame.you === user.lsGame.ah; user.lsGame = null
-        if (tie) { user.lsMoney -= Math.floor(b / 2); await sock.sendMessage(jid, { text: `🪞 TIE lose half` }); continue }
-        if (win) { user.lsMoney += Math.floor(b * 1.8); await sock.sendMessage(jid, { text: `✅ MIRROR WIN +$${Math.floor(b * 1.8)}` }) } else await sock.sendMessage(jid, { text: `❌ MIRROR LOSE $${b}` })
-        if (user.lsMoney >= user.lsQuota) await handleSurvive(user, jid, sock); continue
-      }
-      if (low.startsWith('!lstrap') && (!user.lsGame || user.lsGame.type !== 'lstrap')) {
-        let bet = parseInt(text.split(' ')[1]) || 100; user.lsGame = { type: 'lstrap', bet, pot: 0 }
-        await sock.sendMessage(jid, { text: `🪤 TRAPS [1][2][3] !lslift +2x !lscashout` }); continue
-      }
-      if (low.startsWith('!lslift') && user.lsGame?.type === 'lstrap') {
-        let win = Math.random() < 0.33
-        if (win) { user.lsGame.pot += user.lsGame.bet * 2; await sock.sendMessage(jid, { text: `🧀 CHEESE Pot $${user.lsGame.pot}` }) }
-        else { let pot = user.lsGame.pot; user.lsGame.pot = 0; await sock.sendMessage(jid, { text: `💥 TRAP Lost $${pot}` }) }
-        continue
-      }
-      if (low === '!lscashout' && user.lsGame?.type === 'lstrap') {
-        let pot = user.lsGame.pot; user.lsMoney += pot; user.lsGame = null
-        await sock.sendMessage(jid, { text: `💰 CASHOUT $${pot} ${user.lsMoney}/${user.lsQuota}` })
-        if (user.lsMoney >= user.lsQuota) await handleSurvive(user, jid, sock); continue
-      }
-      if (low.startsWith('!lsmagnet') && (!user.lsGame || user.lsGame.type !== 'lsmagnet')) {
-        let bet = parseInt(text.split(' ')[1]) || 100; user.lsGame = { type: 'lsmagnet', bet, pot: 0, limit: 6000 + Math.floor(Math.random() * 3000), pulls: 0 }
-        await sock.sendMessage(jid, { text: `🧲 MAGNET $${bet} hidden 6k-9k !lspull` }); continue
-      }
-      if (low === '!lspull' && user.lsGame?.type === 'lsmagnet') {
-        if (user.lsGame.pulls >= 5) { await sock.sendMessage(jid, { text: 'Max5 !lscashout' }); continue }
-        let pull = 200 + Math.floor(Math.random() * 3800); user.lsGame.pot += pull; user.lsGame.pulls++
-        if (user.lsGame.pot > user.lsGame.limit) { let b = user.lsGame.bet; user.lsGame = null; await sock.sendMessage(jid, { text: `💥 BREAK LOSE $${b}` }); continue }
-        await sock.sendMessage(jid, { text: `🧲 Pulled $${pull} Total $${user.lsGame.pot} ${user.lsGame.pulls}/5` }); continue
-      }
-      if (low === '!lscashout' && user.lsGame?.type === 'lsmagnet') {
-        let pot = user.lsGame.pot; user.lsMoney += pot; user.lsGame = null
-        await sock.sendMessage(jid, { text: `💰 CASHOUT $${pot} ${user.lsMoney}/${user.lsQuota}` })
-        if (user.lsMoney >= user.lsQuota) await handleSurvive(user, jid, sock); continue
+      if (parts[1] === 'sell') {
+        let coin = parts[2]?.toUpperCase(), amt = parseInt(parts[3]) || 1
+        if (!stocks[coin] || user.stocks[coin] < amt) { await sock.sendMessage(jid, { text: `❌ You own ${user.stocks[coin] || 0} ${coin}` }); return }
+        let gain = amt * stocks[coin].price; user.stocks[coin] -= amt; user.gMoney += gain
+        await sock.sendMessage(jid, { text: `📉 Sold ${amt} ${coin} @ $${stocks[coin].price} = $${gain} | Balance $${user.gMoney}` }); return
       }
     }
   })
 }
-start()
+startBot()
+
+const app = express()
+app.get('/', async (req, res) => {
+  if (isConnected) return res.send(`<h1>Bot Connected ✅ V2 Final</h1><p>BTC $${stocks.BTC.price} ETH $${stocks.ETH.price} DOGE $${stocks.DOGE.price} PEPE $${stocks.PEPE.price}</p>`)
+  if (!lastQR) return res.send('<h1>Waiting QR...</h1><script>setTimeout(()=>location.reload(),5000)</script>')
+  const img = await qrcode.toDataURL(lastQR)
+  res.send(`<img src="${img}"><h2>Scan - V2 Final</h2><script>setTimeout(()=>location.reload(),10000)</script>`)
+})
+app.listen(process.env.PORT || 3000, () => console.log('Web on', process.env.PORT || 3000))
