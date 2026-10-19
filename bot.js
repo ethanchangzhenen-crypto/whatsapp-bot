@@ -187,6 +187,9 @@ async function start() {
         let target = quotedId || sender
         let t = getUser(target)
         let cmd = low
+        if (cmd === '!on' || cmd === '!admin on' || cmd.includes('resume')) { settings.paused = false; await sock.sendMessage(jid, {text:'▶️ BOT ON'}); continue }
+if (cmd === '!off' || cmd === '!admin off' || cmd.includes('pause')) { settings.paused = true; await sock.sendMessage(jid, {text:'⏸️ BOT OFF'}); continue }
+if (cmd === '!admin on games') { settings.gamesOn = true; settings.paused = false; await sock.sendMessage(jid, {text:'Games ON'}); continue }
         if (cmd.startsWith('!reset')) {
           t.gMoney = 50000; t.lsDay = 1; t.lsQuota = 25000; t.lsMoney = 0; t.lsDayStart = Date.now(); t.lsSurvived = 0; t.lsItems = []
           await sock.sendMessage(jid, { text: `🔄 Reset @${target.split('@')[0]} $50k Day1`, mentions: [target] }); continue
