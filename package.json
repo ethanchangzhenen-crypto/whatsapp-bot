@@ -1,9 +1,9 @@
 {
   "name": "loan-shark-wa",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "engines": {
     "node": "20.x"
