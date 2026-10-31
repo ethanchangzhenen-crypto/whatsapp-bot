@@ -1,13 +1,20 @@
 {
-  "name": "whatsapp-fishing-bot",
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "description": "Fishing bot with QR on domain",
   "main": "bot.js",
-  "scripts": { "start": "node bot.js" },
+  "scripts": {
+    "start": "node bot.js"
+  },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.18",
-    "qrcode-terminal": "^0.12.0",
-    "qrcode": "^1.5.3",
-    "express": "^4.18.2",
-    "pino": "^8.17.2",
-    "@hapi/boom": "^10.0.1"
+    "@whiskeysockets/baileys": "6.7.18",
+    "express": "4.18.2",
+    "qrcode": "1.5.3",
+    "qrcode-terminal": "0.12.0",
+    "pino": "8.17.2",
+    "@hapi/boom": "10.0.1"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
